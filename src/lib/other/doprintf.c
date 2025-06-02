@@ -19,6 +19,7 @@ PRIVATE _PROTOTYPE( char *_itoa, (char *p, unsigned num, int radix));
 #ifndef NO_LONGD
 PRIVATE _PROTOTYPE( char *ltoa, (char *p, unsigned long num, int radix));
 #endif
+static void _bintoascii(long num, int radix, char *a);
 
 PRIVATE char *_itoa(p, num, radix)
 register char *p;
@@ -66,6 +67,47 @@ register radix;
 }
 
 #endif
+
+static void _bintoascii(long num, int radix, char *a) {
+    // Implementation for number to ASCII conversion
+    int i = 0;
+    int negative = 0;
+    unsigned long unum;
+
+    // Handle negative numbers for decimal
+    if (radix == 10 && num < 0) {
+        negative = 1;
+        unum = -num;
+    } else {
+        unum = num;
+    }
+
+    // Convert to string (reversed)
+    do {
+        int digit = unum % radix;
+        a[i++] = (digit < 10) ? ('0' + digit) : ('a' + digit - 10);
+        unum /= radix;
+    } while (unum != 0 && i < MAXDIG - 1);
+
+    // Add negative sign if needed
+    if (negative) {
+        a[i++] = '-';
+    }
+
+    // Null terminate
+    a[i] = '\0';
+
+    // Reverse the string
+    int start = 0;
+    int end = i - 1;
+    while (start < end) {
+        char temp = a[start];
+        a[start] = a[end];
+        a[end] = temp;
+        start++;
+        end--;
+    }
+}
 
 #ifndef NO_FLOAT
 extern char *_ecvt();
