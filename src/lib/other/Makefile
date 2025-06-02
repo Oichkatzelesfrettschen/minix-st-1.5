@@ -1,4 +1,4 @@
-CFLAGS	= -O
+CFLAGS	= -O -I../../include
 
 
 

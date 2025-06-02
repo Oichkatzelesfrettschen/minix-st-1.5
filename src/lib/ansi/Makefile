@@ -1,4 +1,4 @@
-CFLAGS	= -O -D_MINIX -D_POSIX_SOURCE
+CFLAGS	= -O -D_MINIX -D_POSIX_SOURCE -I../../include
 
 
 
