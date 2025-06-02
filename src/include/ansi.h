@@ -32,23 +32,17 @@
  * only the function name (K&R prototypes).
  */
 
-#if _ANSI
-#define	_PROTOTYPE(function, params)	function params
+/* These type macros should always use ANSI C definitions for modern compilers */
 #define	_VOIDSTAR	void *
 #define	_VOID		void
 #define	_CONST		const
 #define	_VOLATILE	volatile
 #define _SIZET		size_t
 
+#if _ANSI
+#define	_PROTOTYPE(function, params)	function params
 #else
-
 #define	_PROTOTYPE(function, params)	function()
-#define	_VOIDSTAR	void *
-#define	_VOID		void
-#define	_CONST
-#define	_VOLATILE
-#define _SIZET		int
-
 #endif /* _ANSI */
 
 #endif /* ANSI_H */

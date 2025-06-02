@@ -1,20 +1,22 @@
 #include <lib.h>
 #include <stdio.h>
+#include <stdarg.h>
 
-void fprintf(file, fmt, args)
-FILE *file;
-_CONST char *fmt;
-int args;
+void fprintf(FILE *file, _CONST char *fmt, ...)
 {
-  _doprintf(file, fmt, &args);
+  va_list ap;
+  va_start(ap, fmt);
+  _doprintf(file, fmt, ap);
+  va_end(ap);
   if (testflag(file, PERPRINTF)) fflush(file);
 }
 
 
-void printf(fmt, args)
-_CONST char *fmt;
-int args;
+void printf(_CONST char *fmt, ...)
 {
-  _doprintf(stdout, fmt, &args);
+  va_list ap;
+  va_start(ap, fmt);
+  _doprintf(stdout, fmt, ap);
+  va_end(ap);
   if (testflag(stdout, PERPRINTF)) fflush(stdout);
 }

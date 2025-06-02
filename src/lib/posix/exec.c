@@ -1,39 +1,40 @@
 #include <lib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdarg.h> /* For variadic functions */
 
 extern char **environ;		/* environment pointer */
 
 #define	PTRSIZE	(sizeof(char *))
 
-PUBLIC int execl(name, arg0)
-char *name;
-char *arg0;
+PUBLIC int execl(char *name, char *arg0, ...)
 {
-  return(execve(name, &arg0, environ));
+  /* Body relies on stack layout for variadic args to be accessible via &arg0.
+   * This matches the K&R behavior.
+   */
+  return(execve(name, (char **)&arg0, environ));
 }
 
-PUBLIC int execle(name, argv)
-char *name, *argv;
+PUBLIC int execle(char *name, char *arg0, ...) /* K&R 'argv' becomes 'arg0' */
 {
+  /* Body relies on stack layout for variadic args and envp to be accessible via &arg0.
+   * This matches the K&R behavior.
+   */
   char **p;
-  p = (char **) &argv;
-  while (*p++)			/* null statement */
+  p = (char **) &arg0; /* Start from the first variadic argument */
+  while (*p++)			/* Scan past arguments until NULL */
 	;
-  return(execve(name, &argv, (char **) *p));
+  /* *p is now envp, which followed the NULL after arguments */
+  return(execve(name, (char **)&arg0, (char **) *p));
 }
 
-PUBLIC int execv(name, argv)
-char *name, *argv[];
+PUBLIC int execv(char *name, char *argv[])
 {
   return(execve(name, argv, environ));
 }
 
 
-PUBLIC int execve(path, argv, envp)
-char *path;			/* pointer to name of file to be executed */
-char *argv[];			/* pointer to argument array */
-char *envp[];			/* pointer to environment */
+PUBLIC int execve(char *path, char *argv[], char *envp[])
 {
   register char **argtop;
   register char **envtop;
@@ -45,12 +46,7 @@ char *envp[];			/* pointer to environment */
 }
 
 
-PUBLIC int __execve(path, argv, envp, nargs, nenvps)
-char *path;			/* pointer to name of file to be executed */
-char *argv[];			/* pointer to argument array */
-char *envp[];			/* pointer to environment */
-int nargs;			/* number of args */
-int nenvps;			/* number of environment strings */
+PUBLIC int __execve(char *path, char *argv[], char *envp[], int nargs, int nenvps)
 {
 /* This is split off from execve to be called from execvp, so execvp does not
  * have to allocate up to ARG_MAX bytes just to prepend "sh" to the arg array.
@@ -125,7 +121,7 @@ int nenvps;			/* number of environment strings */
   *ap++ = (char *) NULL;
 
   /* Do the real work. */
-  temp = callm1(MM, EXEC, len(path), stackbytes, 0, path, stack, NIL_PTR);
+  temp = _callm1(MM, EXEC, _len(path), stackbytes, 0, path, stack, NIL_PTR);
   sbrk(-stackbytes);
   return(temp);
 }

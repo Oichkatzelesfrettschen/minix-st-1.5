@@ -7,29 +7,36 @@
 
 extern int _doscanf();
 
-int scanf(format, args)
-char *format;
-unsigned args;
+int scanf(char *format, ...)
 {
-  return(_doscanf(0, (char *) stdin, format, &args));
+  va_list ap;
+  int ret;
+  va_start(ap, format);
+  ret = _doscanf(0, (char *) stdin, format, ap);
+  va_end(ap);
+  return(ret);
 }
 
 
-int fscanf(fp, format, args)
-FILE *fp;
-char *format;
-unsigned args;
+int fscanf(FILE *fp, char *format, ...)
 {
-  return(_doscanf(0, (char *) fp, format, &args));
+  va_list ap;
+  int ret;
+  va_start(ap, format);
+  ret = _doscanf(0, (char *) fp, format, ap);
+  va_end(ap);
+  return(ret);
 }
 
 
-int sscanf(string, format, args)
-char *string;			/* source of data */
-char *format;			/* control string */
-unsigned args;			/* our args */
+int sscanf(char *string, char *format, ...)
 {
-  return(_doscanf(1, string, format, &args));
+  va_list ap;
+  int ret;
+  va_start(ap, format);
+  ret = _doscanf(1, string, format, ap);
+  va_end(ap);
+  return(ret);
 }
 
 
@@ -84,11 +91,7 @@ char *string;
 /* the routine that does the job
  */
 
-int _doscanf(code, funcarg, format, argpfix)
-int code;			/* function to get a character */
-char *funcarg;			/* an argument for the function */
-char *format;			/* the format control string */
-va_list argpfix;		/* our argument list */
+int _doscanf(int code, char *funcarg, char *format, va_list argpfix)
 {
   int done = 0;			/* number of items done */
   int base;			/* conversion base */

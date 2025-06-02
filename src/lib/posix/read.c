@@ -1,9 +1,10 @@
 #include <lib.h>
+#include <sys/types.h> /* For ssize_t, size_t */
+#include <unistd.h>    /* For FS, READ constants and read prototype */
 
-PUBLIC int read(fd, buffer, nbytes)
-int fd;
-char *buffer;
-unsigned nbytes;
+PUBLIC ssize_t read(int fd, void *buffer, size_t nbytes)
 {
-  return(callm1(FS, READ, fd, nbytes, 0, buffer, NIL_PTR, NIL_PTR));
+  /* _callm1 expects nbytes as int, char* for buffer */
+  return((ssize_t)_callm1(FS, READ, fd, (int)nbytes, 0,
+                         (char *)buffer, NIL_PTR, NIL_PTR));
 }
