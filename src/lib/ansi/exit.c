@@ -2,9 +2,8 @@
 
 PUBLIC void (*__cleanup) ();
 
-PUBLIC void exit(status)
-int status;
+PUBLIC void exit(int status)
 {
   if (__cleanup) (*__cleanup) ();
-  callm1(MM, EXIT, status, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR);
+  _callm1(MM, EXIT, status, 0, 0, NIL_PTR, NIL_PTR, NIL_PTR);
 }

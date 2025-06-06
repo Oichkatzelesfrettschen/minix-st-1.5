@@ -1,8 +1,9 @@
 #include <lib.h>
+#include <sys/types.h> /* For mode_t */
+#include <unistd.h>    /* For FS, MKDIR constants if not in lib.h */
 
-PUBLIC int mkdir(name, mode)
-char *name;
-int mode;
+PUBLIC int mkdir(const char *name, mode_t mode)
 {
-  return(callm1(FS, MKDIR, len(name), mode, 0, name, NIL_PTR, NIL_PTR));
+  return(_callm1(FS, MKDIR, _len((char *)name), (int)mode, 0,
+                 (char *)name, NIL_PTR, NIL_PTR));
 }

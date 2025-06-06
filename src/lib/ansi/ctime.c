@@ -76,8 +76,7 @@ PRIVATE int dst = -1;	/* whether dst holds in current timezone */
  *
  */
 
-time_t mktime(t)
-_CONST struct tm *t;
+time_t mktime(_CONST struct tm *t)
 {
         time_t s;
         int y;
