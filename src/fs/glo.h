@@ -30,4 +30,4 @@ typedef unsigned short u16_t;	/* belongs in h/type.h */
 extern u16_t data_org[INFO + 2];/* origin and sizes of init */
 				/* belongs in h/build.h */
 extern int (*call_vector[])();	/* table of system calls handled by FS */
-extern max_major;		/* maximum major device (+ 1) */
+extern int max_major;		/* maximum major device (+ 1) */
