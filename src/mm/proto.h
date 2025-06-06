@@ -1,7 +1,7 @@
 /* Function prototypes. */
 
 /* alloc.c */
-extern phys_clicks alloc_mem();
+extern phys_clicks alloc_mem(phys_clicks clicks);
 extern void free_mem();
 extern phys_clicks max_hole();
 extern void mem_init();
@@ -31,13 +31,13 @@ extern void mm_exit();
 extern int do_getset();
 
 /* main.c */
-extern int do_brk2();
-extern phys_clicks get_mem();
+extern int do_brk2(void);
+extern phys_clicks get_mem(phys_clicks *pbase, int extflag);
 #if (MACHINE == MACINTOSH)
-extern phys_clicks start_click();
+extern phys_clicks start_click(void);
 #endif
-extern void main();
-extern void reply();
+extern int main(void);
+extern void reply(int proc_nr, int result, int res2, char *respt);
 
 /* putc.c */
 extern void putc();
@@ -59,7 +59,7 @@ extern void stop_proc();
 extern int allowed();
 extern int mem_copy();
 extern int no_sys();
-extern void panic();
+extern void panic(const char *message, int errnum);
 
 /* library */
 extern int close();
@@ -67,11 +67,11 @@ extern int creat();
 extern int fstat();
 extern long lseek();
 extern int open();
-extern void printk();
+extern void printk(const char *fmt, ...);
 extern int read();
-extern int receive();
-extern int send();
-extern int sendrec();
+extern int receive(int src, message *m_ptr);
+extern int send(int dest, message *m_ptr);
+extern int sendrec(int srcdest, message *m_ptr);
 extern void sys_abort();
 extern void sys_copy();
 extern void sys_exec();
