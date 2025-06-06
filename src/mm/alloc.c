@@ -31,14 +31,13 @@ PRIVATE struct hole {
 PRIVATE struct hole *hole_head;	/* pointer to first hole */
 PRIVATE struct hole *free_slots;	/* ptr to list of unused table slots */
 
-FORWARD void del_slot();
-FORWARD void merge();
+FORWARD void del_slot(struct hole *prev_ptr, struct hole *hp);
+FORWARD void merge(struct hole *hp);
 
 /*===========================================================================*
  *				alloc_mem				     *
  *===========================================================================*/
-PUBLIC phys_clicks alloc_mem(clicks)
-phys_clicks clicks;		/* amount of memory requested */
+PUBLIC phys_clicks alloc_mem(phys_clicks clicks)
 {
 /* Allocate a block of memory from the free list using first fit. The block
  * consists of a sequence of contiguous bytes, whose length in clicks is
@@ -76,9 +75,7 @@ phys_clicks clicks;		/* amount of memory requested */
 /*===========================================================================*
  *				free_mem				     *
  *===========================================================================*/
-PUBLIC void free_mem(base, clicks)
-phys_clicks base;		/* base address of block to free */
-phys_clicks clicks;		/* number of clicks to free */
+PUBLIC void free_mem(phys_clicks base, phys_clicks clicks)
 {
 /* Return a block of free memory to the hole list.  The parameters tell where
  * the block starts in physical memory and how big it is.  The block is added
@@ -122,9 +119,7 @@ phys_clicks clicks;		/* number of clicks to free */
 /*===========================================================================*
  *				del_slot				     *
  *===========================================================================*/
-PRIVATE void del_slot(prev_ptr, hp)
-register struct hole *prev_ptr;	/* pointer to hole entry just ahead of 'hp' */
-register struct hole *hp;	/* pointer to hole entry to be removed */
+PRIVATE void del_slot(struct hole *prev_ptr, struct hole *hp)
 {
 /* Remove an entry from the hole list.  This procedure is called when a
  * request to allocate memory removes a hole in its entirety, thus reducing
@@ -145,8 +140,7 @@ register struct hole *hp;	/* pointer to hole entry to be removed */
 /*===========================================================================*
  *				merge					     *
  *===========================================================================*/
-PRIVATE void merge(hp)
-register struct hole *hp;	/* ptr to hole to merge with its successors */
+PRIVATE void merge(struct hole *hp)
 {
 /* Check for contiguous holes and merge any found.  Contiguous holes can occur
  * when a block of memory is freed, and it happens to abut another hole on

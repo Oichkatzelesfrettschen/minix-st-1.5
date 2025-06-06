@@ -105,7 +105,7 @@ define dso_local i32 @main() #0 {
 
 ; Function Attrs: noinline nounwind optnone uwtable
 define internal void @mm_init() #0 {
-  call void (...) @mem_init()
+  call void @mem_init()
   %1 = load i32, ptr getelementptr inbounds (%struct.mproc, ptr @mproc, i32 0, i32 13), align 8
   %2 = or i32 %1, 1
   store i32 %2, ptr getelementptr inbounds (%struct.mproc, ptr @mproc, i32 0, i32 13), align 8
@@ -273,7 +273,7 @@ define dso_local i32 @do_brk2() #0 {
   %49 = load i32, ptr %13, align 4
   %50 = load i32, ptr %9, align 4
   %51 = add i32 %49, %50
-  %52 = call i32 (...) @mem_left()
+  %52 = call i32 @mem_left()
   %53 = add i32 %51, %52
   %54 = zext i32 %53 to i64
   %55 = shl i64 %54, 8
@@ -409,7 +409,7 @@ define dso_local i32 @do_brk2() #0 {
 
 declare i32 @alloc_mem(i32 noundef) #1
 
-declare i32 @mem_left(...) #1
+declare i32 @mem_left() #1
 
 declare void @printk(ptr noundef, ...) #1
 
@@ -450,7 +450,7 @@ declare i32 @sendrec(i32 noundef, ptr noundef) #1
 
 declare i32 @receive(i32 noundef, ptr noundef) #1
 
-declare void @mem_init(...) #1
+declare void @mem_init() #1
 
 attributes #0 = { noinline nounwind optnone uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cmov,+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }

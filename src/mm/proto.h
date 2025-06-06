@@ -2,10 +2,10 @@
 
 /* alloc.c */
 extern phys_clicks alloc_mem(phys_clicks clicks);
-extern void free_mem();
-extern phys_clicks max_hole();
-extern void mem_init();
-extern phys_clicks mem_left();
+extern void free_mem(phys_clicks base, phys_clicks clicks);
+extern phys_clicks max_hole(void);
+extern void mem_init(void);
+extern phys_clicks mem_left(void);
 
 /* amoeba.c */
 #if AM_KERNEL
