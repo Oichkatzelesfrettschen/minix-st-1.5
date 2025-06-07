@@ -30,6 +30,28 @@
 
 ; --- Global Instance of the Queue Registry ---
 ; This would be initialized by the kernel/IPC system.
+; For now, it's a declaration. A proper definition with initialization is needed.
+@global_queue_registry_ptr = external global ptr ; ptr to %queue_registry
+
+; --- Placeholder Lock Functions ---
+; These would interact with a real read-write lock implementation.
+declare void @rwlock_read_lock(ptr %lock_ptr) nounwind
+declare void @rwlock_read_unlock(ptr %lock_ptr) nounwind
+; declare void @rwlock_write_lock(ptr %lock_ptr) nounwind
+; declare void @rwlock_write_unlock(ptr %lock_ptr) nounwind
+
+; --- Queue Registry Management Functions (Declarations/Placeholders) ---
+
+; Initializes the global queue registry.
+declare void @init_queue_registry(i32 %max_processes) nounwind
+
+; Registers a message queue for a given PID.
+; Returns 0 on success, non-zero on failure.
+declare i32 @register_process_queue(i32 %pid, ptr %queue_instance) nounwind
+
+; Unregisters a message queue for a given PID.
+declare void @unregister_process_queue(i32 %pid) nounwind
+
 ; Global pointer to the queue registry instance, initialized to null.
 @global_queue_registry_ptr = global ptr null, align 8
 
@@ -396,152 +418,43 @@ fail_unlock_and_return_null:
 ;   ptr: Pointer to the %msg_queue for the PID, or ptr null if not found/invalid.
 define ptr @get_process_queue(i32 %pid) nounwind {
 entry:
-  call void @internal_rwlock_read_lock()
-
   %registry_instance_ptr = load ptr, ptr @global_queue_registry_ptr, align 8
   %is_registry_null = icmp eq ptr %registry_instance_ptr, null
-  br i1 %is_registry_null, label %fail_return_null_locked, label %validate_pid
+  br i1 %is_registry_null, label %fail_no_registry, label %proceed_lock
 
-validate_pid:
+fail_no_registry:
+  ret ptr null
+
+proceed_lock:
+  %lock_ptr_addr = getelementptr inbounds %queue_registry, ptr %registry_instance_ptr, i32 0, i32 2
+  %lock_ptr = load ptr, ptr %lock_ptr_addr, align 8
+  call void @rwlock_read_lock(ptr %lock_ptr)
+
+  ; Check PID bounds
+
   %num_procs_addr = getelementptr inbounds %queue_registry, ptr %registry_instance_ptr, i32 0, i32 0
   %num_procs = load i32, ptr %num_procs_addr, align 4
   %is_pid_negative = icmp slt i32 %pid, 0
   %is_pid_too_large = icmp sge i32 %pid, %num_procs
   %is_pid_invalid = or i1 %is_pid_negative, %is_pid_too_large
-  br i1 %is_pid_invalid, label %fail_return_null_locked, label %access_entry
+  br i1 %is_pid_invalid, label %fail_pid_invalid, label %lookup_entry
 
-access_entry:
+fail_pid_invalid:
+  call void @rwlock_read_unlock(ptr %lock_ptr)
+  ret ptr null
+
+lookup_entry:
   %queue_array_base_ptr_addr = getelementptr inbounds %queue_registry, ptr %registry_instance_ptr, i32 0, i32 1
-  %queue_array_base_ptr = load ptr, ptr %queue_array_base_ptr_addr, align 8
+  %queue_array_base_ptr = load ptr, ptr %queue_array_base_ptr_addr, align 8 ; This is ptr to %proc_queue_entry
+
   %proc_queue_entry_ptr = getelementptr inbounds %proc_queue_entry, ptr %queue_array_base_ptr, i32 %pid
 
-  %owner_pid_addr = getelementptr inbounds %proc_queue_entry, ptr %proc_queue_entry_ptr, i32 0, i32 0
-  %current_owner_pid = load i32, ptr %owner_pid_addr, align 4
-  %is_pid_mismatch = icmp ne i32 %current_owner_pid, %pid ; Check if slot is owned by THIS pid
-  br i1 %is_pid_mismatch, label %fail_return_null_locked, label %retrieve_queue
+  ; Optional: Check if this slot is actually active/initialized for the PID
+  ; For now, assume direct mapping if PID is in bounds.
 
-retrieve_queue:
   %actual_queue_ptr_addr = getelementptr inbounds %proc_queue_entry, ptr %proc_queue_entry_ptr, i32 0, i32 1
-  %actual_msg_queue_ptr = load ptr, ptr %actual_queue_ptr_addr, align 8
-  call void @internal_rwlock_read_unlock()
+  %actual_msg_queue_ptr = load ptr, ptr %actual_queue_ptr_addr, align 8 ; This is ptr to %msg_queue
+
+  call void @rwlock_read_unlock(ptr %lock_ptr)
   ret ptr %actual_msg_queue_ptr
-
-fail_return_null_locked:
-  call void @internal_rwlock_read_unlock()
-  ret ptr null
-}
-
-; --- Lock Initialization Function ---
-define void @init_registry_lock() nounwind {
-entry:
-  ; Check if already initialized. Use 'acquire' to ensure subsequent reads (if any) are not reordered before this.
-  %current_val = load atomic i32, ptr @registry_rw_lock_initialized acquire, align 4
-  %is_initialized = icmp eq i32 %current_val, 1
-  br i1 %is_initialized, label %already_initialized, label %try_initialize
-
-try_initialize:
-  ; Attempt to set from 0 to 1.
-  ; success_ordering: acq_rel (release for the write, acquire for subsequent reads by this thread)
-  ; failure_ordering: acquire (to see writes from other threads)
-  %cas_result = cmpxchg ptr @registry_rw_lock_initialized, i32 0, i32 1 acq_rel acquire
-  %stored_val = extractvalue { i32, i1 } %cas_result, 0 ; The value that was read from memory
-  %did_exchange = extractvalue { i32, i1 } %cas_result, 1 ; Boolean: true if exchange happened
-
-  br i1 %did_exchange, label %perform_initialization, label %already_initialized_or_concurrent_init
-
-perform_initialization:
-  ; This thread acquired the right to initialize.
-  %ret_code = call i32 @pthread_rwlock_init(ptr @registry_rw_lock, ptr null)
-  %init_failed = icmp ne i32 %ret_code, 0
-  br i1 %init_failed, label %panic_init_failed, label %init_done
-
-panic_init_failed:
-  call void @minix_panic(ptr @str_lock_init_failed)
-  unreachable ; Panic does not return
-
-init_done:
-  ; The flag @registry_rw_lock_initialized was already set to 1 by cmpxchg.
-  br label %already_initialized
-
-already_initialized_or_concurrent_init:
-  ; Another thread successfully initialized, or is in the process of initializing.
-  ; Spin until the flag is 1. This handles the case where another thread's pthread_rwlock_init is slow.
-  %spin_val = load atomic i32, ptr @registry_rw_lock_initialized acquire, align 4
-  %is_now_initialized = icmp eq i32 %spin_val, 1
-  br i1 %is_now_initialized, label %already_initialized, label %already_initialized_or_concurrent_init ; Spin
-
-already_initialized:
-  ret void
-}
-
-; --- Lock Wrapper Functions ---
-
-define void @internal_rwlock_read_lock() nounwind {
-entry:
-  call void @init_registry_lock()
-
-  ; Increment read lock contention counter (symbolic)
-  %current_read_contention = load atomic i64, ptr @read_lock_contentions monotonic, align 8
-  %next_read_contention = add i64 %current_read_contention, 1
-  store atomic i64 %next_read_contention, ptr @read_lock_contentions monotonic, align 8
-
-  %ret_code_rdlock = call i32 @pthread_rwlock_rdlock(ptr @registry_rw_lock)
-  %lock_failed = icmp ne i32 %ret_code_rdlock, 0
-  br i1 %lock_failed, label %panic_lock_failed, label %lock_successful
-
-panic_lock_failed:
-  call void @minix_panic(ptr @str_read_lock_failed)
-  unreachable
-
-lock_successful:
-  ret void
-}
-
-define void @internal_rwlock_read_unlock() nounwind {
-entry:
-  %ret_code = call i32 @pthread_rwlock_unlock(ptr @registry_rw_lock)
-  %unlock_failed = icmp ne i32 %ret_code, 0
-  br i1 %unlock_failed, label %panic_unlock_failed, label %unlock_successful
-
-panic_unlock_failed:
-  call void @minix_panic(ptr @str_read_unlock_failed)
-  unreachable
-
-unlock_successful:
-  ret void
-}
-
-define void @internal_rwlock_write_lock() nounwind {
-entry:
-  call void @init_registry_lock()
-
-  ; Increment write lock contention counter (symbolic)
-  %current_write_contention = load atomic i64, ptr @write_lock_contentions monotonic, align 8
-  %next_write_contention = add i64 %current_write_contention, 1
-  store atomic i64 %next_write_contention, ptr @write_lock_contentions monotonic, align 8
-
-  %ret_code_wrlock = call i32 @pthread_rwlock_wrlock(ptr @registry_rw_lock)
-  %lock_failed = icmp ne i32 %ret_code_wrlock, 0
-  br i1 %lock_failed, label %panic_lock_failed, label %lock_successful
-
-panic_lock_failed:
-  call void @minix_panic(ptr @str_write_lock_failed)
-  unreachable
-
-lock_successful:
-  ret void
-}
-
-define void @internal_rwlock_write_unlock() nounwind {
-entry:
-  %ret_code = call i32 @pthread_rwlock_unlock(ptr @registry_rw_lock)
-  %unlock_failed = icmp ne i32 %ret_code, 0
-  br i1 %unlock_failed, label %panic_unlock_failed, label %unlock_successful
-
-panic_unlock_failed:
-  call void @minix_panic(ptr @str_write_unlock_failed)
-  unreachable
-
-unlock_successful:
-  ret void
 }

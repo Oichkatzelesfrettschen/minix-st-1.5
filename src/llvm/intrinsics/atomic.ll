@@ -25,6 +25,7 @@ define i32 @minix_atomic_enqueue(ptr %q_ptr, ptr %msg_to_enqueue_ptr) nounwind {
 entry:
 
 %ring_buffer_elements_ptr_ptr = getelementptr inbounds %msg_queue, ptr %q_ptr, i32 0, i32 0
+
   %head_packed_ptr = getelementptr inbounds %msg_queue, ptr %q_ptr, i32 0, i32 1
   %tail_packed_ptr = getelementptr inbounds %msg_queue, ptr %q_ptr, i32 0, i32 2
   %capacity_val_ptr = getelementptr inbounds %msg_queue, ptr %q_ptr, i32 0, i32 3
@@ -119,6 +120,7 @@ cas_success_load_msg_dequeue:
   ret ptr %dequeued_msg_ptr
 
 fail_queue_empty_dequeue:
+
   ; Get pointers to queue fields
   %ring_buffer_elements_ptr_ptr = getelementptr inbounds %msg_queue, ptr %q_ptr, i32 0, i32 0
   %head_idx_ptr = getelementptr inbounds %msg_queue, ptr %q_ptr, i32 0, i32 1
