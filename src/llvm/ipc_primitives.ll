@@ -1,6 +1,8 @@
 ; src/llvm/ipc_primitives.ll
 ; Implementation of asynchronous Inter-Process Communication (IPC) primitives.
 
+@requeue_overflow_policy_g = internal global i32 0, align 4 ; 0=drop, future: 1=retry, 2=panic
+
 ; Forward declaration of types
 %message = type { i32, i32, [6 x i64], ptr } ; m_source is field 0
 %msg_queue = type { ptr, i64, i64, i32 }
@@ -19,12 +21,25 @@ declare void @llvm.trap() nounwind noreturn
 ; Placeholder for handling requeue buffer overflow
 define internal void @handle_requeue_overflow(ptr %queue, ptr %msg) nounwind {
 entry:
-  ; TODO CRITICAL: Implement robust handling for queue full during requeue.
-  ; Options: expand queue, drop oldest message from main queue, block, signal error.
-  ; For now, this is a critical failure point if hit, indicating a design issue
-  ; or unexpectedly small main queue for the requeue buffer size.
-  call void @llvm.trap() ; Indicate critical unhandled situation
-  unreachable ; llvm.trap is noreturn
+  %current_policy = load i32, ptr @requeue_overflow_policy_g, align 4
+
+  ; Switch on policy, but for now, only explicitly handle 'drop' (0).
+  ; Other values will fall to default and can trap, indicating unimplemented policy.
+  %is_drop_policy = icmp eq i32 %current_policy, 0
+  br i1 %is_drop_policy, label %policy_drop, label %policy_unsupported_or_panic
+
+policy_drop:
+  ; Policy is to drop the message %msg.
+  ; This means we effectively do nothing with %msg and it's lost.
+  ret void
+
+policy_unsupported_or_panic:
+  ; For any policy other than 0 (drop), or for future explicit panic policy.
+  ; TODO: Implement other policies like retry N times.
+  ; For now, non-drop policies are treated as critical/unhandled.
+  call void @llvm.trap()
+  unreachable
+
 }
 
 define internal void @requeue_saved_messages(ptr %queue, ptr %buffer_base_ptr, ptr %requeue_count_addr) nounwind {

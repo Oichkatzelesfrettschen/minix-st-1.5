@@ -10,12 +10,54 @@ source_filename = "src/llvm/timing.ll"
 
 ; --- Internal Helper Functions ---
 
-; Platform-specific frequency detection (placeholder)
+define internal i32 @get_platform_id() nounwind {
+entry:
+  ; Placeholder: Assume 0 for x86, 1 for ARM, etc.
+  ; A real implementation would determine this.
+  ret i32 0 ; Default to x86 for now
+}
+
+define internal i64 @read_x86_tsc_frequency() nounwind {
+entry:
+  ; Placeholder: Would read CPUID/MSR for TSC frequency
+  ret i64 2400000000 ; Default 2.4 GHz
+}
+
+define internal i64 @read_arm_cntfrq() nounwind {
+entry:
+  ; TODO Placeholder: Would read ARM system register CNTVCT_EL0 or similar
+  ret i64 2000000000 ; Default 2.0 GHz (example)
+}
+
+define internal i64 @calibrate_frequency_empirically() nounwind {
+entry:
+  ; TODO Placeholder: Would involve calibration against a known time source
+  ret i64 2400000000 ; Default 2.4 GHz as a fallback
+}
+
+; Platform-specific frequency detection
 define internal i64 @detect_cpu_frequency() nounwind {
 entry:
-  ; For now, return a reasonable default (e.g., 2.4 GHz)
-  ; Actual implementation would involve platform-specific calls (CPUID, /proc/cpuinfo, etc.)
-  ret i64 2400000000
+  %platform_id = call i32 @get_platform_id()
+
+  switch i32 %platform_id, label %default_platform [
+    i32 0, label %x86_platform   ; Assuming 0 is x86
+    i32 1, label %arm_platform    ; Assuming 1 is ARM
+  ]
+
+x86_platform:
+  %freq_x86 = call i64 @read_x86_tsc_frequency()
+  ret i64 %freq_x86
+
+arm_platform:
+  %freq_arm = call i64 @read_arm_cntfrq()
+  ret i64 %freq_arm
+
+default_platform:
+  ; Fallback for unknown platforms or if specific detection fails
+  %freq_calibrated = call i64 @calibrate_frequency_empirically()
+  ret i64 %freq_calibrated
+
 }
 
 ; --- Public API Functions ---

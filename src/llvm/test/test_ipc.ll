@@ -93,6 +93,21 @@ ok:
   ret void
 }
 
+  ret void
+}
+
+@assert_eq_ptr_msg_str = private unnamed_addr constant [19 x i8] c"Assert_eq_ptr fail\00", align 1
+define void @assert_eq_ptr(ptr %p1, ptr %p2, ptr %msg) nounwind {
+entry:
+  %cond = icmp eq ptr %p1, %p2
+  br i1 %cond, label %ok, label %fail
+fail:
+  call void @llvm.trap()
+  unreachable
+ok:
+  ret void
+}
+
 @assert_non_null_ptr_msg_str = private unnamed_addr constant [24 x i8] c"Assert_non_null_ptr fail\00", align 1
 define void @assert_non_null_ptr(ptr %p1, ptr %msg) nounwind {
 entry:
@@ -247,7 +262,7 @@ define i32 @test_message_pool_alloc_free() nounwind {
 entry:
   ; No need for timing or queue registry for this specific pool test.
   ; Only init_message_pool.
-  call void @init_message_pool(i32 3) ; Pool for 3 messages
+  call void @init_message_pool(i32 2) ; Pool for 2 messages
 
   %msg1 = call ptr @alloc_message()
   call void @assert_non_null_ptr(ptr %msg1, ptr @pool_test_msg1)
@@ -255,24 +270,19 @@ entry:
   %msg2 = call ptr @alloc_message()
   call void @assert_non_null_ptr(ptr %msg2, ptr @pool_test_msg2)
 
+  ; Pool of 2 is now exhausted. Next alloc should return null.
   %msg3 = call ptr @alloc_message()
-  call void @assert_non_null_ptr(ptr %msg3, ptr @pool_test_msg3)
+  call void @assert_null_ptr(ptr %msg3, ptr @pool_test_msg3) ; Expect null due to exhaustion
 
-  ; At this point, pool of 3 should be exhausted.
-  ; The current alloc_message() traps on exhaustion, so we can't test that directly here
-  ; without a more complex setup to catch traps or a non-trapping alloc.
-  ; The subtask was modified to not test exhaustion trap.
+  call void @free_message(ptr %msg1) ; Free the first message
 
-  call void @free_message(ptr %msg2) ; Free the second message
-
-  %msg5 = call ptr @alloc_message() ; Should get back the slot from msg2
-  call void @assert_non_null_ptr(ptr %msg5, ptr @pool_test_msg4)
-  call void @assert_eq_ptr(ptr %msg5, ptr %msg2, ptr @pool_test_msg5)
+  %msg4 = call ptr @alloc_message() ; Should get back the slot from msg1
+  call void @assert_non_null_ptr(ptr %msg4, ptr @pool_test_msg4)
+  call void @assert_eq_ptr(ptr %msg4, ptr %msg1, ptr @pool_test_msg5)
 
   ; Cleanup remaining messages
-  call void @free_message(ptr %msg1)
-  call void @free_message(ptr %msg3)
-  call void @free_message(ptr %msg5) ; Which is actually msg2's slot
+  call void @free_message(ptr %msg4) ; Which is actually msg1's slot
+  call void @free_message(ptr %msg2)
 
   ret i32 0 ; Success
 }

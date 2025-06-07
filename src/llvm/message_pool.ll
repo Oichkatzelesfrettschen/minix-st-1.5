@@ -142,62 +142,77 @@ init_done:
   ret void
 }
 
-; Allocate a message from the pool
+; Allocate a message from the pool (lock-free atomic)
 define ptr @alloc_message() nounwind {
 entry:
   %pool_instance = load ptr, ptr @global_message_pool, align 8
   %is_pool_not_init = icmp eq ptr %pool_instance, null
-  br i1 %is_pool_not_init, label %alloc_pool_fail, label %alloc_pool_ok
+  br i1 %is_pool_not_init, label %pool_uninitialized_failure, label %get_head_ptr_loc
 
-alloc_pool_ok:
+get_head_ptr_loc:
   %free_list_head_ptr_loc = getelementptr inbounds %message_pool, ptr %pool_instance, i32 0, i32 3
-  %current_head_node_ptr = load ptr, ptr %free_list_head_ptr_loc, align 8 ; ptr to %free_list_node
+  br label %try_alloc_loop
 
-  %is_pool_empty = icmp eq ptr %current_head_node_ptr, null
-  br i1 %is_pool_empty, label %alloc_pool_fail, label %pop_from_list
+try_alloc_loop:
+  %old_head_node = load atomic ptr, ptr %free_list_head_ptr_loc acquire, align 8
+  %is_list_empty = icmp eq ptr %old_head_node, null
+  br i1 %is_list_empty, label %pool_empty_failure, label %prepare_cas
 
-pop_from_list:
-  %message_to_return_raw = bitcast ptr %current_head_node_ptr to ptr ; ptr to %message
+prepare_cas:
+  %next_ptr_in_old_head_loc = getelementptr inbounds %free_list_node, ptr %old_head_node, i32 0, i32 0
+  %next_node_for_head = load ptr, ptr %next_ptr_in_old_head_loc, align 8 ; Non-atomic load ok, node is "ours" for now
 
-  %next_node_ptr_loc = getelementptr inbounds %free_list_node, ptr %current_head_node_ptr, i32 0, i32 0
-  %next_head_node_ptr = load ptr, ptr %next_node_ptr_loc, align 8
+  %cas_result = cmpxchg ptr %free_list_head_ptr_loc, ptr %old_head_node, ptr %next_node_for_head acq_rel acquire, align 8
+  %cas_succeeded = extractvalue { ptr, i1 } %cas_result, 1
+  br i1 %cas_succeeded, label %allocation_succeeded, label %try_alloc_loop ; CAS failed, retry
 
-  store ptr %next_head_node_ptr, ptr %free_list_head_ptr_loc, align 8
+allocation_succeeded:
+  ; Clear the 'next' pointer in the allocated node to prevent stale pointers
+  store ptr null, ptr %next_ptr_in_old_head_loc, align 8
+  %message_to_return = bitcast ptr %old_head_node to ptr ; ptr %message
+  ret ptr %message_to_return
 
-  ret ptr %message_to_return_raw
+pool_uninitialized_failure:
+  ret ptr null ; Pool not initialized
 
-alloc_pool_fail:
-  call void @llvm.trap()
-  unreachable
+pool_empty_failure:
+  ret ptr null ; Pool is empty
 }
 
-; Return a message to the pool
+; Return a message to the pool (lock-free atomic)
 define void @free_message(ptr %msg_to_free) nounwind {
 entry:
-  %is_msg_null_to_free = icmp eq ptr %msg_to_free, null
-  br i1 %is_msg_null_to_free, label %free_done_actual, label %proceed_free_actual
+  %is_msg_null = icmp eq ptr %msg_to_free, null
+  br i1 %is_msg_null, label %free_done, label %proceed_free
 
-proceed_free_actual:
-  %pool_instance_free = load ptr, ptr @global_message_pool, align 8
-  %is_pool_not_init_free = icmp eq ptr %pool_instance_free, null
-  br i1 %is_pool_not_init_free, label %free_fail_panic_actual, label %pool_ok_free_actual
+proceed_free:
+  %pool_instance = load ptr, ptr @global_message_pool, align 8
+  %is_pool_not_init = icmp eq ptr %pool_instance, null
+  br i1 %is_pool_not_init, label %pool_uninit_free_failure, label %prepare_new_head
 
-pool_ok_free_actual:
-  %free_list_head_ptr_loc_free = getelementptr inbounds %message_pool, ptr %pool_instance_free, i32 0, i32 3
-  %current_head_node_free = load ptr, ptr %free_list_head_ptr_loc_free, align 8
+prepare_new_head:
+  %new_head_node = bitcast ptr %msg_to_free to ptr ; ptr %free_list_node
+  %free_list_head_ptr_loc = getelementptr inbounds %message_pool, ptr %pool_instance, i32 0, i32 3
+  br label %try_free_loop
 
-  %new_head_node_free = bitcast ptr %msg_to_free to ptr ; ptr to %free_list_node
+try_free_loop:
+  %current_head_on_freelist = load atomic ptr, ptr %free_list_head_ptr_loc acquire, align 8
 
-  %next_ptr_in_new_head_loc_free = getelementptr inbounds %free_list_node, ptr %new_head_node_free, i32 0, i32 0
-  store ptr %current_head_node_free, ptr %next_ptr_in_new_head_loc_free, align 8
+  %next_ptr_in_new_head_loc = getelementptr inbounds %free_list_node, ptr %new_head_node, i32 0, i32 0
+  store ptr %current_head_on_freelist, ptr %next_ptr_in_new_head_loc, align 8 ; Set 'next' of msg_to_free
 
-  store ptr %new_head_node_free, ptr %free_list_head_ptr_loc_free, align 8
-  br label %free_done_actual
+  %cas_result = cmpxchg ptr %free_list_head_ptr_loc, ptr %current_head_on_freelist, ptr %new_head_node acq_rel acquire, align 8
+  %cas_succeeded = extractvalue { ptr, i1 } %cas_result, 1
+  br i1 %cas_succeeded, label %freeing_succeeded, label %try_free_loop ; CAS failed, retry
 
-free_fail_panic_actual:
-  call void @llvm.trap()
+freeing_succeeded:
+  br label %free_done
+
+pool_uninit_free_failure:
+  call void @llvm.trap() ; Freeing to a non-existent pool is a critical error
   unreachable
 
-free_done_actual:
+free_done:
+
   ret void
 }
