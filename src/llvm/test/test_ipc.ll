@@ -44,6 +44,33 @@ declare i64 @llvm.readcyclecounter() nounwind readnone
 @pool_alloc_failure_count = external global i64, align 8
 @pool_free_count = external global i64, align 8
 
+; From queue_registry.ll
+declare void @initialize_global_queue_registry(i32) nounwind
+declare i32 @register_process_queue(i32, ptr) nounwind
+declare ptr @get_process_queue(i32) nounwind         ; Used by minix_send_async
+
+; From timing.ll
+declare void @init_timing_subsystem() nounwind
+declare i64 @ns_to_cycles(i64) nounwind
+
+; From message_pool.ll
+declare void @init_message_pool(i32) nounwind
+declare ptr @alloc_message() nounwind
+declare void @free_message(ptr) nounwind
+
+; LLVM intrinsics
+declare void @llvm.trap() nounwind noreturn
+declare i64 @llvm.readcyclecounter() nounwind readnone
+
+; --- Global Variables for Test Control ---
+@test_current_proc_queue = internal global ptr null, align 8
+@ANY_SOURCE_PID_CONST = internal constant i32 -1, align 4 ; Updated ANY_SOURCE convention
+
+; External Message Pool Metric Counters (from message_pool.ll)
+@pool_alloc_success_count = external global i64, align 8
+@pool_alloc_failure_count = external global i64, align 8
+@pool_free_count = external global i64, align 8
+
 ; --- Mock Implementations ---
 ; Mock for the current process's queue. Tests will set @test_current_proc_queue.
 define ptr @get_current_process_message_queue() nounwind {

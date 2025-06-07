@@ -75,18 +75,22 @@ return_calculated_freq:
 fallback_to_default_freq:
   ; Fallback if CPUID method fails or is not supported adequately.
   ; Could also call @calibrate_frequency_empirically() here.
+
   ret i64 2400000000 ; Default 2.4 GHz
 }
 
 define internal i64 @read_arm_cntfrq() nounwind {
 entry:
-  ; Placeholder: Would read ARM system register CNTVCT_EL0 or similar
+
+  ; TODO: Would read ARM system register CNTVCT_EL0 or similar
   ret i64 2000000000 ; Default 2.0 GHz (example)
 }
 
 define internal i64 @calibrate_frequency_empirically() nounwind {
 entry:
-  ; Placeholder: Would involve calibration against a known time source
+
+  ; TODO: Would involve calibration against a known time source
+
   ret i64 2400000000 ; Default 2.4 GHz as a fallback
 }
 
@@ -112,6 +116,7 @@ default_platform:
   ; Fallback for unknown platforms or if specific detection fails
   %freq_calibrated = call i64 @calibrate_frequency_empirically()
   ret i64 %freq_calibrated
+
 }
 
 ; --- Public API Functions ---
