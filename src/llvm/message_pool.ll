@@ -16,6 +16,7 @@ source_filename = "src/llvm/message_pool.ll"
   ptr,    ; base_address (ptr to the start of the contiguous block of messages)
   i32,            ; total_messages (capacity)
   i32,            ; message_size (size of one %message structure in bytes)
+  i128            ; tagged_free_list_head {ptr, counter}
 
 }
 
@@ -78,7 +79,6 @@ entry:
   %local_plain_head_ptr_alloca = alloca ptr, align 8
   store ptr null, ptr %local_plain_head_ptr_alloca, align 8
 
-
   %i_alloc = alloca i32, align 4
   store i32 0, ptr %i_alloc, align 4
   br label %loop_header
@@ -118,7 +118,7 @@ loop_exit_build:
 define void @init_message_pool(i32 %num_messages) nounwind {
 entry:
   ; One-time initialization guard (remains the same)
-=
+
   %already_init_val = load atomic i32, ptr @message_pool_initialized_flag acquire, align 4
   %is_already_init = icmp ne i32 %already_init_val, 0
   br i1 %is_already_init, label %init_done, label %proceed_init
@@ -190,8 +190,7 @@ define ptr @alloc_message() nounwind {
 entry:
   %pool_instance = load ptr, ptr @global_message_pool, align 8
   %is_pool_not_init = icmp eq ptr %pool_instance, null
-
-br i1 %is_pool_not_init, label %pool_uninitialized_failure_alloc, label %get_head_ptr_loc_alloc
+  br i1 %is_pool_not_init, label %pool_uninitialized_failure_alloc, label %get_head_ptr_loc_alloc
 
 get_head_ptr_loc_alloc:
   %tagged_free_list_head_ptr_loc = getelementptr inbounds %message_pool, ptr %pool_instance, i32 0, i32 3 ; ptr to i128
@@ -289,6 +288,5 @@ pool_uninit_free_failure_trap:
   unreachable
 
 free_done_exit:
-
   ret void
 }

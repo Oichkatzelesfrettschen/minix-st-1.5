@@ -19,56 +19,77 @@ entry:
 
 define internal i64 @read_x86_tsc_frequency() nounwind {
 entry:
-  ; TODO: Placeholder: Would read CPUID/MSR for TSC frequency.
-  ;
-  ; Method 1: CPUID Leaf 0x15 (Timing Information)
-  ;   This is the preferred method on newer Intel CPUs.
-  ;   - EAX: Denominator for TSC/Crystal clock ratio.
-  ;   - EBX: Numerator for TSC/Crystal clock ratio.
-  ;   - ECX: Nominal crystal clock frequency in Hz.
-  ;   If ECX is 0, the crystal clock is the core crystal clock, and its frequency
-  ;   might need to be known from other sources or CPUID leaf 0x16H.
-  ;   If EAX and EBX are non-zero, TSC Frequency = ECX * (EBX / EAX).
-  ;   If ECX is non-zero and EBX/EAX are zero, then ECX is the TSC frequency.
-  ;   Requires using an intrinsic like @llvm.x86.cpuid to get these values.
-  ;   Example:
-  ;     %cpuid_res_15h = call { i32, i32, i32, i32 } @llvm.x86.cpuid(i32 21) ; Leaf 0x15 = 21
-  ;     %eax_15 = extractvalue { i32, i32, i32, i32 } %cpuid_res_15h, 0
-  ;     %ebx_15 = extractvalue { i32, i32, i32, i32 } %cpuid_res_15h, 1
-  ;     %ecx_15 = extractvalue { i32, i32, i32, i32 } %cpuid_res_15h, 2
-  ;
-  ; Method 2: CPUID Leaf 0x16 (Processor Frequency Information - Skylake and newer)
-  ;   - EAX: Processor Base Frequency (in MHz).
-  ;   - EBX: Maximum Frequency (in MHz).
-  ;   - ECX: Bus (Reference) Frequency (in MHz).
-  ;   On many modern Intel CPUs where TSC is invariant and runs at base frequency,
-  ;   the value from CPUID.16H.EAX can be used as TSC frequency * 1MHz.
-  ;
-  ; Method 3: MSRs (Model Specific Registers)
-  ;   - e.g., IA32_TSC_INFO (Intel) or MSR_AMD_TSC_RATIO (AMD).
-  ;   - Reading MSRs requires specific intrinsics or kernel interfaces (e.g., rdmsr instruction).
-  ;
-  ; Method 4: Calibration (Fallback)
-  ;   - If CPUID/MSR methods are unavailable or unreliable (e.g., on older CPUs or VMs
-  ;     that don't report accurately), calibrate the TSC against a known time source
-  ;     like HPET or ACPI PM Timer over a short interval. This is done by @calibrate_frequency_empirically.
-  ;
-  ; For this placeholder, a default common frequency is returned.
+  ; Input for CPUID leaf 0x15 (decimal 21)
+  %leaf_0x15_const = i32 21
+
+  ; Check if leaf 0x15 is supported by checking max basic leaf.
+  ; CPUID with EAX=0 gives max basic leaf in EAX.
+  %max_basic_leaf_val = call i32 asm sideeffect "cpuid", "={eax},{eax},~{ebx},~{ecx},~{edx}"(i32 0)
+  %leaf_15_supported_cond = icmp uge i32 %max_basic_leaf_val, %leaf_0x15_const
+  br i1 %leaf_15_supported_cond, label %exec_cpuid_15, label %fallback_to_default_freq
+
+exec_cpuid_15:
+  ; For CPUID leaf 0x15, EAX (input) = 0x15, ECX (input) = 0 (subleaf for core crystal clock info)
+  ; Output: EAX=Denominator, EBX=Numerator, ECX=CrystalHz
+  ; Using separate asm calls to retrieve each register value.
+  ; Note: The input to the asm template is empty "()" because registers are set within the asm string.
+
+  ; Get EAX output (Denominator) from CPUID leaf 0x15, subleaf 0
+  %eax_val_15 = call i32 asm sideeffect "movl $21, %eax; movl $0, %ecx; cpuid", "={eax},~{ebx},~{ecx},~{edx}"()
+  ; Get EBX output (Numerator) from CPUID leaf 0x15, subleaf 0
+  %ebx_val_15 = call i32 asm sideeffect "movl $21, %eax; movl $0, %ecx; cpuid", "={ebx},~{eax},~{ecx},~{edx}"()
+  ; Get ECX output (Crystal Clock Frequency in Hz) from CPUID leaf 0x15, subleaf 0
+  %ecx_val_15 = call i32 asm sideeffect "movl $21, %eax; movl $0, %ecx; cpuid", "={ecx},~{eax},~{ebx},~{edx}"()
+
+  %denominator_eax64 = zext i32 %eax_val_15 to i64
+  %numerator_ebx64 = zext i32 %ebx_val_15 to i64
+  %crystal_hz_ecx64 = zext i32 %ecx_val_15 to i64
+
+  %is_eax_zero = icmp eq i64 %denominator_eax64, 0
+  br i1 %is_eax_zero, label %check_ecx_direct_freq, label %calculate_ratio_freq
+
+check_ecx_direct_freq:
+  %is_ebx_also_zero = icmp eq i64 %numerator_ebx64, 0
+  %is_ecx_non_zero = icmp ne i64 %crystal_hz_ecx64, 0
+  %can_use_ecx_directly = and i1 %is_ebx_also_zero, %is_ecx_non_zero
+  br i1 %can_use_ecx_directly, label %return_ecx_freq, label %fallback_to_default_freq
+
+calculate_ratio_freq:
+  %is_crystal_hz_also_zero = icmp eq i64 %crystal_hz_ecx64, 0
+  br i1 %is_crystal_hz_also_zero, label %fallback_to_default_freq, label %perform_calculation_freq
+
+perform_calculation_freq:
+  ; TSC Frequency = Crystal Clock * (Numerator / Denominator)
+  %mul_num_crystal = mul i64 %crystal_hz_ecx64, %numerator_ebx64
+  %tsc_freq_calculated = udiv i64 %mul_num_crystal, %denominator_eax64
+
+  %is_calc_freq_valid = icmp ugt i64 %tsc_freq_calculated, 0
+  br i1 %is_calc_freq_valid, label %return_calculated_freq, label %fallback_to_default_freq
+
+return_ecx_freq:
+  ret i64 %crystal_hz_ecx64
+
+return_calculated_freq:
+  ret i64 %tsc_freq_calculated
+
+fallback_to_default_freq:
+  ; Fallback if CPUID method fails or is not supported adequately.
+  ; Could also call @calibrate_frequency_empirically() here.
 
   ret i64 2400000000 ; Default 2.4 GHz
 }
 
 define internal i64 @read_arm_cntfrq() nounwind {
 entry:
-  ; TODO Placeholder: Would read ARM system register CNTVCT_EL0 or similar
 
+  ; TODO: Would read ARM system register CNTVCT_EL0 or similar
   ret i64 2000000000 ; Default 2.0 GHz (example)
 }
 
 define internal i64 @calibrate_frequency_empirically() nounwind {
 entry:
 
-  ; TODO Placeholder: Would involve calibration against a known time source
+  ; TODO: Would involve calibration against a known time source
 
   ret i64 2400000000 ; Default 2.4 GHz as a fallback
 }
