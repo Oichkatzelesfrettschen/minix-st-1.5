@@ -213,5 +213,6 @@ pool_uninit_free_failure:
   unreachable
 
 free_done:
+
   ret void
 }

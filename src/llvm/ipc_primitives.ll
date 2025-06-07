@@ -39,6 +39,7 @@ policy_unsupported_or_panic:
   ; For now, non-drop policies are treated as critical/unhandled.
   call void @llvm.trap()
   unreachable
+
 }
 
 define internal void @requeue_saved_messages(ptr %queue, ptr %buffer_base_ptr, ptr %requeue_count_addr) nounwind {

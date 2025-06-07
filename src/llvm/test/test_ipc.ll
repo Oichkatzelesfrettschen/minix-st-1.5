@@ -93,6 +93,21 @@ ok:
   ret void
 }
 
+  ret void
+}
+
+@assert_eq_ptr_msg_str = private unnamed_addr constant [19 x i8] c"Assert_eq_ptr fail\00", align 1
+define void @assert_eq_ptr(ptr %p1, ptr %p2, ptr %msg) nounwind {
+entry:
+  %cond = icmp eq ptr %p1, %p2
+  br i1 %cond, label %ok, label %fail
+fail:
+  call void @llvm.trap()
+  unreachable
+ok:
+  ret void
+}
+
 @assert_non_null_ptr_msg_str = private unnamed_addr constant [24 x i8] c"Assert_non_null_ptr fail\00", align 1
 define void @assert_non_null_ptr(ptr %p1, ptr %msg) nounwind {
 entry:
