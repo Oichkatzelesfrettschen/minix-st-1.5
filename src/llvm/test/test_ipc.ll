@@ -90,6 +90,7 @@ ok:
 define void @assert_eq_ptr(ptr %p1, ptr %p2, ptr %msg) nounwind {
 entry:
   %cond = icmp eq ptr %p1, %p2
+
   br i1 %cond, label %ok, label %fail
 fail:
   call void @llvm.trap()
@@ -343,6 +344,7 @@ continue_to_pool_test:
   %ret_pool_metrics = call i32 @test_message_pool_metrics()
   %failed_pool_metrics = icmp ne i32 %ret_pool_metrics, 0
   br i1 %failed_pool_metrics, label %set_failure, label %all_tests_done
+
 
 set_failure:
   store i32 1, ptr %overall_result, align 4
