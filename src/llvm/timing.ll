@@ -1,0 +1,89 @@
+; src/llvm/timing.ll
+; CPU Frequency Calibration and Timing Utilities
+
+source_filename = "src/llvm/timing.ll"
+
+; --- Global Variables ---
+@cpu_freq_hz = global i64 0, align 8
+@tsc_freq_hz = global i64 0, align 8 ; Defined as per feedback, though not immediately used
+@ns_per_cycle = global double 0.0, align 8
+
+; --- Internal Helper Functions ---
+
+; Platform-specific frequency detection (placeholder)
+define internal i64 @detect_cpu_frequency() nounwind {
+entry:
+  ; For now, return a reasonable default (e.g., 2.4 GHz)
+  ; Actual implementation would involve platform-specific calls (CPUID, /proc/cpuinfo, etc.)
+  ret i64 2400000000
+}
+
+; --- Public API Functions ---
+
+; Initializes the timing subsystem
+define void @init_timing_subsystem() nounwind {
+entry:
+  %detected_freq = call i64 @detect_cpu_frequency()
+  store i64 %detected_freq, ptr @cpu_freq_hz, align 8
+
+  ; Calculate nanoseconds per cycle for informational purposes (double)
+  %freq_double = uitofp i64 %detected_freq to double
+  %billion_double = fconstant double 1.0e9 ; 1,000,000,000.0
+
+  ; Check for division by zero if detected_freq could be zero (detect_cpu_frequency should prevent this)
+  %is_freq_zero_check = icmp eq double %freq_double, 0.0
+  br i1 %is_freq_zero_check, label %handle_zero_freq_init, label %do_division_init
+
+handle_zero_freq_init:
+  ; Avoid division by zero, store 0.0 for ns_per_cycle.
+  store double 0.0, ptr @ns_per_cycle, align 8
+  br label %timing_init_done
+
+do_division_init:
+  %calculated_ns_per_cycle = fdiv double %billion_double, %freq_double
+  store double %calculated_ns_per_cycle, ptr @ns_per_cycle, align 8
+  br label %timing_init_done
+
+timing_init_done:
+  ret void
+}
+
+; Convert nanoseconds to CPU cycles
+define i64 @ns_to_cycles(i64 %ns) nounwind {
+entry:
+  %current_cpu_freq_hz_val = load i64, ptr @cpu_freq_hz, align 8
+  %ns_per_second_const_val = i64 1000000000
+
+  ; Check if cpu_freq_hz is 0 to prevent division by zero
+  %is_freq_zero_conv = icmp eq i64 %current_cpu_freq_hz_val, 0
+  br i1 %is_freq_zero_conv, label %handle_zero_freq_conversion, label %do_conversion
+
+handle_zero_freq_conversion:
+  ; If frequency is unknown, behavior depends on desired error handling.
+  ; Returning max i64 for non-zero ns indicates an effectively infinite wait/error.
+  %is_ns_input_zero = icmp eq i64 %ns, 0
+  %ret_val_on_zero_freq = select i1 %is_ns_input_zero, i64 0, i64 -1 ; Using -1 (all ones bitpattern for i64)
+  ret i64 %ret_val_on_zero_freq
+
+do_conversion:
+  ; Using simplified integer math: cycles = ns * (cpu_freq_hz / ns_per_second)
+  ; This can lose precision if cpu_freq_hz < ns_per_second_const (i.e., < 1GHz).
+  ; Assumes cpu_freq_hz will typically be >= 1GHz.
+  ; For more precision with integer math, (ns * cpu_freq_hz) / ns_per_second_const is better,
+  ; but requires overflow checks for the intermediate multiplication (ns * cpu_freq_hz).
+  ; The user snippet implied the simpler (freq/ns_per_sec)*ns.
+
+  %cycles_per_ns_quotient_conv = udiv i64 %current_cpu_freq_hz_val, %ns_per_second_const_val
+  %calculated_cycles_conv = mul i64 %ns, %cycles_per_ns_quotient_conv
+
+  ; To improve precision slightly for the (freq/ns_per_sec)*ns method:
+  ; Add remainder term: (ns * (cpu_freq_hz % ns_per_second_const)) / ns_per_second_const
+  %remainder_freq_part = urem i64 %current_cpu_freq_hz_val, %ns_per_second_const_val
+  %adj_numerator = mul i64 %ns, %remainder_freq_part
+  ; Check for overflow in adj_numerator if ns or remainder_freq_part are large, though
+  ; remainder_freq_part < ns_per_second_const_val.
+  %adj_cycles = udiv i64 %adj_numerator, %ns_per_second_const_val
+  %final_calculated_cycles = add i64 %calculated_cycles_conv, %adj_cycles
+
+  ret i64 %final_calculated_cycles
+}
