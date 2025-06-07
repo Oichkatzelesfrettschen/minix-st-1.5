@@ -18,6 +18,18 @@ declare i64 @ns_to_cycles(i64) nounwind ; From timing.ll
 ; Declaration for llvm.trap
 declare void @llvm.trap() nounwind noreturn
 
+; Placeholder for logging a dropped message
+define internal void @log_dropped_message(ptr %dropped_msg) nounwind {
+entry:
+  ; TODO: Implement actual logging mechanism.
+  ; This could involve:
+  ; - Getting message details (source, type, etc.) if %dropped_msg is not null.
+  ; - Formatting a log string.
+  ; - Calling an external logging function (e.g., from a C library or OS service).
+  ; For now, it's a no-op placeholder.
+  ret void
+}
+
 ; Placeholder for handling requeue buffer overflow
 define internal void @handle_requeue_overflow(ptr %queue, ptr %msg) nounwind {
 entry:
@@ -29,8 +41,8 @@ entry:
   br i1 %is_drop_policy, label %policy_drop, label %policy_unsupported_or_panic
 
 policy_drop:
-  ; Policy is to drop the message %msg.
-  ; This means we effectively do nothing with %msg and it's lost.
+  ; Policy is to drop the message %msg. Log it, then do nothing with %msg.
+  call void @log_dropped_message(ptr %msg)
   ret void
 
 policy_unsupported_or_panic:
@@ -39,7 +51,6 @@ policy_unsupported_or_panic:
   ; For now, non-drop policies are treated as critical/unhandled.
   call void @llvm.trap()
   unreachable
-
 }
 
 define internal void @requeue_saved_messages(ptr %queue, ptr %buffer_base_ptr, ptr %requeue_count_addr) nounwind {

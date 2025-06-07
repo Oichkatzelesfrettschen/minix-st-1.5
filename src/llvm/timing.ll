@@ -19,19 +19,57 @@ entry:
 
 define internal i64 @read_x86_tsc_frequency() nounwind {
 entry:
-  ; Placeholder: Would read CPUID/MSR for TSC frequency
+  ; TODO: Placeholder: Would read CPUID/MSR for TSC frequency.
+  ;
+  ; Method 1: CPUID Leaf 0x15 (Timing Information)
+  ;   This is the preferred method on newer Intel CPUs.
+  ;   - EAX: Denominator for TSC/Crystal clock ratio.
+  ;   - EBX: Numerator for TSC/Crystal clock ratio.
+  ;   - ECX: Nominal crystal clock frequency in Hz.
+  ;   If ECX is 0, the crystal clock is the core crystal clock, and its frequency
+  ;   might need to be known from other sources or CPUID leaf 0x16H.
+  ;   If EAX and EBX are non-zero, TSC Frequency = ECX * (EBX / EAX).
+  ;   If ECX is non-zero and EBX/EAX are zero, then ECX is the TSC frequency.
+  ;   Requires using an intrinsic like @llvm.x86.cpuid to get these values.
+  ;   Example:
+  ;     %cpuid_res_15h = call { i32, i32, i32, i32 } @llvm.x86.cpuid(i32 21) ; Leaf 0x15 = 21
+  ;     %eax_15 = extractvalue { i32, i32, i32, i32 } %cpuid_res_15h, 0
+  ;     %ebx_15 = extractvalue { i32, i32, i32, i32 } %cpuid_res_15h, 1
+  ;     %ecx_15 = extractvalue { i32, i32, i32, i32 } %cpuid_res_15h, 2
+  ;
+  ; Method 2: CPUID Leaf 0x16 (Processor Frequency Information - Skylake and newer)
+  ;   - EAX: Processor Base Frequency (in MHz).
+  ;   - EBX: Maximum Frequency (in MHz).
+  ;   - ECX: Bus (Reference) Frequency (in MHz).
+  ;   On many modern Intel CPUs where TSC is invariant and runs at base frequency,
+  ;   the value from CPUID.16H.EAX can be used as TSC frequency * 1MHz.
+  ;
+  ; Method 3: MSRs (Model Specific Registers)
+  ;   - e.g., IA32_TSC_INFO (Intel) or MSR_AMD_TSC_RATIO (AMD).
+  ;   - Reading MSRs requires specific intrinsics or kernel interfaces (e.g., rdmsr instruction).
+  ;
+  ; Method 4: Calibration (Fallback)
+  ;   - If CPUID/MSR methods are unavailable or unreliable (e.g., on older CPUs or VMs
+  ;     that don't report accurately), calibrate the TSC against a known time source
+  ;     like HPET or ACPI PM Timer over a short interval. This is done by @calibrate_frequency_empirically.
+  ;
+  ; For this placeholder, a default common frequency is returned.
+
   ret i64 2400000000 ; Default 2.4 GHz
 }
 
 define internal i64 @read_arm_cntfrq() nounwind {
 entry:
   ; TODO Placeholder: Would read ARM system register CNTVCT_EL0 or similar
+
   ret i64 2000000000 ; Default 2.0 GHz (example)
 }
 
 define internal i64 @calibrate_frequency_empirically() nounwind {
 entry:
+
   ; TODO Placeholder: Would involve calibration against a known time source
+
   ret i64 2400000000 ; Default 2.4 GHz as a fallback
 }
 

@@ -39,6 +39,11 @@ declare i64 @llvm.readcyclecounter() nounwind readnone
 @test_current_proc_queue = internal global ptr null, align 8
 @ANY_SOURCE_PID_CONST = internal constant i32 -1, align 4 ; Updated ANY_SOURCE convention
 
+; External Message Pool Metric Counters (from message_pool.ll)
+@pool_alloc_success_count = external global i64, align 8
+@pool_alloc_failure_count = external global i64, align 8
+@pool_free_count = external global i64, align 8
+
 ; --- Mock Implementations ---
 ; Mock for the current process's queue. Tests will set @test_current_proc_queue.
 define ptr @get_current_process_message_queue() nounwind {
@@ -85,21 +90,7 @@ ok:
 define void @assert_eq_ptr(ptr %p1, ptr %p2, ptr %msg) nounwind {
 entry:
   %cond = icmp eq ptr %p1, %p2
-  br i1 %cond, label %ok, label %fail
-fail:
-  call void @llvm.trap()
-  unreachable
-ok:
-  ret void
-}
 
-  ret void
-}
-
-@assert_eq_ptr_msg_str = private unnamed_addr constant [19 x i8] c"Assert_eq_ptr fail\00", align 1
-define void @assert_eq_ptr(ptr %p1, ptr %p2, ptr %msg) nounwind {
-entry:
-  %cond = icmp eq ptr %p1, %p2
   br i1 %cond, label %ok, label %fail
 fail:
   call void @llvm.trap()
@@ -132,6 +123,19 @@ ok:
   ret void
 }
 
+@assert_eq_i64_msg_str = private unnamed_addr constant [19 x i8] c"Assert_eq_i64 fail\00", align 1
+define void @assert_eq_i64(i64 %v1, i64 %v2, ptr %msg) nounwind {
+entry:
+  %cond = icmp eq i64 %v1, %v2
+  br i1 %cond, label %ok_i64, label %fail_i64
+fail_i64:
+  ; In a real test, one might print %msg and values before trapping.
+  call void @llvm.trap()
+  unreachable
+ok_i64:
+  ret void
+}
+
 ; --- Test Case String Literals (for messages in assertions) ---
 @requeue_test_msg1 = private unnamed_addr constant [20 x i8] c"Requeue: Enqueue A\00", align 1
 @requeue_test_msg2 = private unnamed_addr constant [20 x i8] c"Requeue: Enqueue B\00", align 1
@@ -148,6 +152,29 @@ ok:
 @pool_test_msg3 = private unnamed_addr constant [19 x i8] c"Pool: Alloc 3 null\00", align 1
 @pool_test_msg4 = private unnamed_addr constant [19 x i8] c"Pool: Alloc 5 null\00", align 1
 @pool_test_msg5 = private unnamed_addr constant [27 x i8] c"Pool: Reused msg mismatch\00", align 1
+
+; --- Helper to reset message pool counters ---
+define internal void @reset_pool_counters() nounwind {
+entry:
+  store i64 0, ptr @pool_alloc_success_count, align 8
+  store i64 0, ptr @pool_alloc_failure_count, align 8
+  store i64 0, ptr @pool_free_count, align 8
+  ret void
+}
+
+; --- Helper to assert message pool metric counts ---
+define internal void @assert_metric_counts(i64 %expected_s, i64 %expected_f, i64 %expected_fr, ptr %msg_prefix) nounwind {
+entry:
+  %s_val = load i64, ptr @pool_alloc_success_count, align 8
+  %f_val = load i64, ptr @pool_alloc_failure_count, align 8
+  %fr_val = load i64, ptr @pool_free_count, align 8
+
+  ; In a real test, %msg_prefix could be used to generate more specific error messages.
+  call void @assert_eq_i64(i64 %s_val, i64 %expected_s, ptr %msg_prefix)
+  call void @assert_eq_i64(i64 %f_val, i64 %expected_f, ptr %msg_prefix)
+  call void @assert_eq_i64(i64 %fr_val, i64 %expected_fr, ptr %msg_prefix)
+  ret void
+}
 
 ; --- Test Cases Will Follow ---
 ; (Existing test_ipc_self_send_receive and test_ipc_inter_pid_send_receive and old main are removed)
@@ -258,31 +285,40 @@ entry:
   ret i32 0 ; Success
 }
 
-define i32 @test_message_pool_alloc_free() nounwind {
+define i32 @test_message_pool_metrics() nounwind {
 entry:
-  ; No need for timing or queue registry for this specific pool test.
-  ; Only init_message_pool.
-  call void @init_message_pool(i32 2) ; Pool for 2 messages
+  call void @init_message_pool(i32 2) ; Pool of capacity 2.
+  call void @reset_pool_counters()   ; Reset counters after init, before test operations
 
+  %msg_pfx_alloc1 = private unnamed_addr constant [17 x i8] c"Metrics alloc 1\00", align 1
   %msg1 = call ptr @alloc_message()
-  call void @assert_non_null_ptr(ptr %msg1, ptr @pool_test_msg1)
+  call void @assert_non_null_ptr(ptr %msg1, ptr %msg_pfx_alloc1)
+  call void @assert_metric_counts(i64 1, i64 0, i64 0, ptr %msg_pfx_alloc1)
 
+  %msg_pfx_alloc2 = private unnamed_addr constant [17 x i8] c"Metrics alloc 2\00", align 1
   %msg2 = call ptr @alloc_message()
-  call void @assert_non_null_ptr(ptr %msg2, ptr @pool_test_msg2)
+  call void @assert_non_null_ptr(ptr %msg2, ptr %msg_pfx_alloc2)
+  call void @assert_metric_counts(i64 2, i64 0, i64 0, ptr %msg_pfx_alloc2)
 
-  ; Pool of 2 is now exhausted. Next alloc should return null.
+  %msg_pfx_alloc_fail = private unnamed_addr constant [24 x i8] c"Metrics alloc exhaust\00", align 1
   %msg3 = call ptr @alloc_message()
-  call void @assert_null_ptr(ptr %msg3, ptr @pool_test_msg3) ; Expect null due to exhaustion
+  call void @assert_null_ptr(ptr %msg3, ptr %msg_pfx_alloc_fail)
+  call void @assert_metric_counts(i64 2, i64 1, i64 0, ptr %msg_pfx_alloc_fail)
 
-  call void @free_message(ptr %msg1) ; Free the first message
+  %msg_pfx_free1 = private unnamed_addr constant [16 x i8] c"Metrics free 1\00", align 1
+  call void @free_message(ptr %msg1)
+  call void @assert_metric_counts(i64 2, i64 1, i64 1, ptr %msg_pfx_free1)
 
-  %msg4 = call ptr @alloc_message() ; Should get back the slot from msg1
-  call void @assert_non_null_ptr(ptr %msg4, ptr @pool_test_msg4)
-  call void @assert_eq_ptr(ptr %msg4, ptr %msg1, ptr @pool_test_msg5)
+  %msg_pfx_realloc = private unnamed_addr constant [19 x i8] c"Metrics re-alloc\00", align 1
+  %msg4 = call ptr @alloc_message()
+  call void @assert_non_null_ptr(ptr %msg4, ptr %msg_pfx_realloc)
+  call void @assert_eq_ptr(ptr %msg4, ptr %msg1, ptr %msg_pfx_realloc) ; Check reuse
+  call void @assert_metric_counts(i64 3, i64 1, i64 1, ptr %msg_pfx_realloc)
 
-  ; Cleanup remaining messages
-  call void @free_message(ptr %msg4) ; Which is actually msg1's slot
+  %msg_pfx_free_all = private unnamed_addr constant [20 x i8] c"Metrics free all\00", align 1
   call void @free_message(ptr %msg2)
+  call void @free_message(ptr %msg4) ; This is effectively msg1 being freed again
+  call void @assert_metric_counts(i64 3, i64 1, i64 3, ptr %msg_pfx_free_all)
 
   ret i32 0 ; Success
 }
@@ -304,10 +340,11 @@ continue_to_timeout_test:
   br i1 %failed_timeout, label %set_failure, label %continue_to_pool_test
 
 continue_to_pool_test:
-  ; Run test_message_pool_alloc_free
-  %ret_pool = call i32 @test_message_pool_alloc_free()
-  %failed_pool = icmp ne i32 %ret_pool, 0
-  br i1 %failed_pool, label %set_failure, label %all_tests_done
+  ; Run test_message_pool_metrics
+  %ret_pool_metrics = call i32 @test_message_pool_metrics()
+  %failed_pool_metrics = icmp ne i32 %ret_pool_metrics, 0
+  br i1 %failed_pool_metrics, label %set_failure, label %all_tests_done
+
 
 set_failure:
   store i32 1, ptr %overall_result, align 4
