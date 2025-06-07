@@ -1,6 +1,5 @@
 ; src/llvm/ipc_primitives.ll
 ; Implementation of asynchronous Inter-Process Communication (IPC) primitives.
-
 ; Forward declaration of types
 %message = type { i32, i32, [6 x i64], ptr } ; m_source is field 0
 %msg_queue = type { ptr, i64, i64, i32 }
@@ -11,7 +10,6 @@ declare ptr @get_current_process_message_queue() nounwind ; Hypothetical
 declare i32 @minix_atomic_enqueue(ptr %q_ptr, ptr %msg_to_enqueue_ptr) nounwind ; Defined in atomic.ll
 declare ptr @minix_atomic_dequeue(ptr %q_ptr) nounwind ; Defined in atomic.ll
 declare i64 @llvm.readcyclecounter() nounwind readnone
-
 
 define i32 @minix_send_async(ptr %msg_ptr, i32 %dest_pid) nounwind {
 entry_send:
@@ -107,4 +105,5 @@ process_finite_timeout:
 
 return_null_receive:
   ret ptr null
+
 }
